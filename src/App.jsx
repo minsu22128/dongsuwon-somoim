@@ -97,6 +97,31 @@ function CardImage({ group, idx }) {
   );
 }
 
+// App 바깥에 정의 — 화면이 다시 그려져도 입력칸이 새로 만들어지지 않아
+// 한글 입력 중 글자가 사라지는 문제를 막아줍니다.
+function FormFields({ form, setForm }) {
+  return (
+    <>
+      <div><label>대표 이미지</label><ImagePicker preview={form.image} onPick={(img) => setForm(f => ({ ...f, image: img }))} /></div>
+      <div><label>소모임 유형</label>
+        <div className="seg-pick">{['oneday','club','challenge'].map(t => (
+          <button key={t} className={form.type === t ? 'on' : ''} onClick={() => setForm(f => ({ ...f, type: t }))}>{TYPE_LABEL[t]}</button>))}</div>
+      </div>
+      <div><label>소모임 이름</label><input placeholder="예: 농구합시다 – 만나농구모임" value={form.name} onChange={e => setForm(f => ({ ...f, name: e.target.value }))} /></div>
+      <div><label>분류</label>
+        <select value={form.tag} onChange={e => setForm(f => ({ ...f, tag: e.target.value }))}>{TAG_ORDER.map(t => <option key={t} value={t}>{t}</option>)}</select></div>
+      <div className="field-row">
+        <div><label>장소</label><input placeholder="예: 2층 만나홀" value={form.place} onChange={e => setForm(f => ({ ...f, place: e.target.value }))} /></div>
+        <div><label>정원</label><input type="number" value={form.capacity} onChange={e => setForm(f => ({ ...f, capacity: e.target.value }))} /></div>
+      </div>
+      <div className="field-row">
+        <div><label>모임 날짜</label><input type="date" value={form.meetDate} onChange={e => setForm(f => ({ ...f, meetDate: e.target.value }))} /></div>
+        <div><label>시간</label><input placeholder="예: 오후 7:00" value={form.meetTime} onChange={e => setForm(f => ({ ...f, meetTime: e.target.value }))} /></div>
+      </div>
+    </>
+  );
+}
+
 export default function App() {
   const [user, setUser] = useState(undefined);   // supabase user
   const [profile, setProfile] = useState(undefined); // {name} or null
@@ -107,6 +132,7 @@ export default function App() {
 
   const [groups, setGroups] = useState(null);
   const [activeCat, setActiveCat] = useState('all');
+  const [showManual, setShowManual] = useState(false);
   const [selectedGroupId, setSelectedGroupId] = useState(null);
   const [screen, setScreen] = useState('list');
   const [view, setView] = useState('attendance');
@@ -121,6 +147,7 @@ export default function App() {
   const [editing, setEditing] = useState(false);
   const [editForm, setEditForm] = useState(null);
   const [createForm, setCreateForm] = useState(null);
+  const [confirmLeave, setConfirmLeave] = useState(false);
 
   const showToast = (m) => { setToast(m); setTimeout(() => setToast(''), 2400); };
 
@@ -218,8 +245,20 @@ export default function App() {
     catch (e) { showToast('신청 실패'); }
   };
   const leaveGroup = async () => {
-    try { await dbLeave(currentGroup.id, user.id); setEditing(false); showToast('가입이 해지됐어요'); reloadGroups(); }
-    catch (e) { showToast('해지 실패'); }
+    setConfirmLeave(false);
+    try {
+      if (isLeader) {
+        // 리더가 나가면 소모임방 자체를 삭제 (멤버가 남아있어도)
+        await dbDeleteGroup(currentGroup.id);
+        backToList();
+        showToast('소모임방이 삭제됐어요');
+      } else {
+        await dbLeave(currentGroup.id, user.id);
+        showToast('가입이 해지됐어요');
+      }
+      setEditing(false);
+      reloadGroups();
+    } catch (e) { showToast('해지 실패'); }
   };
 
   const openCreate = () => { setCreateForm({ name: '', image: null, type: 'oneday', tag: TAG_ORDER[0], place: '', meetDate: '', meetTime: '', capacity: 30 }); setScreen('create'); };
@@ -274,27 +313,6 @@ export default function App() {
 
   const styleBlock = STYLE;
 
-  const FormFields = ({ form, setForm }) => (
-    <>
-      <div><label>대표 이미지</label><ImagePicker preview={form.image} onPick={(img) => setForm(f => ({ ...f, image: img }))} /></div>
-      <div><label>소모임 유형</label>
-        <div className="seg-pick">{['oneday','club','challenge'].map(t => (
-          <button key={t} className={form.type === t ? 'on' : ''} onClick={() => setForm(f => ({ ...f, type: t }))}>{TYPE_LABEL[t]}</button>))}</div>
-      </div>
-      <div><label>소모임 이름</label><input placeholder="예: 농구합시다 – 만나농구모임" value={form.name} onChange={e => setForm(f => ({ ...f, name: e.target.value }))} /></div>
-      <div><label>분류</label>
-        <select value={form.tag} onChange={e => setForm(f => ({ ...f, tag: e.target.value }))}>{TAG_ORDER.map(t => <option key={t} value={t}>{t}</option>)}</select></div>
-      <div className="field-row">
-        <div><label>장소</label><input placeholder="예: 2층 만나홀" value={form.place} onChange={e => setForm(f => ({ ...f, place: e.target.value }))} /></div>
-        <div><label>정원</label><input type="number" value={form.capacity} onChange={e => setForm(f => ({ ...f, capacity: e.target.value }))} /></div>
-      </div>
-      <div className="field-row">
-        <div><label>모임 날짜</label><input type="date" value={form.meetDate} onChange={e => setForm(f => ({ ...f, meetDate: e.target.value }))} /></div>
-        <div><label>시간</label><input placeholder="예: 오후 7:00" value={form.meetTime} onChange={e => setForm(f => ({ ...f, meetTime: e.target.value }))} /></div>
-      </div>
-    </>
-  );
-
   // ── 렌더 ──
   if (bootError) return <div className="app-root" style={cssVars}><style>{styleBlock}</style><div className="wrap"><div className="gate"><h2>연결 오류</h2><p>{bootError}</p></div></div></div>;
   if (user === undefined || profile === undefined) return <div className="app-root" style={cssVars}><style>{styleBlock}</style><div className="empty">불러오는 중...</div></div>;
@@ -345,7 +363,26 @@ export default function App() {
                   <CatIcon name={c.icon} color={activeCat === c.key ? '#108a6c' : '#B6BAC4'} />{c.label}
                 </button>
               ))}
+              <button className={`cat-btn manual-btn ${showManual ? 'active' : ''}`} onClick={() => setShowManual(v => !v)}>
+                <span style={{ fontWeight: 800, fontSize: 16 }}>?</span>사용법
+              </button>
             </div>
+            {showManual && (
+              <div className="manual-box">
+                <div className="manual-head">
+                  <b>소모임 앱 사용법</b>
+                  <button onClick={() => setShowManual(false)} aria-label="닫기">×</button>
+                </div>
+                <ol className="manual-list">
+                  <li><b>소모임 찾기</b> — 위 분류(원데이·클럽·챌린지)로 골라보고, 마음에 드는 소모임 카드를 눌러요.</li>
+                  <li><b>신청하기</b> — 소모임 안에서 <b>신청하기</b>를 누르면 가입돼요. 가입하면 출석·소식을 함께 쓸 수 있어요.</li>
+                  <li><b>출석 체크</b> — 모임 날, 내 이름 옆 동그란 버튼을 눌러 출석을 표시해요. 날짜는 화살표로 넘겨요.</li>
+                  <li><b>소식 나눔</b> — <b>소식</b> 탭에서 일정·공지·기도제목을 자유롭게 올려요.</li>
+                  <li><b>소모임 만들기</b> — 아래 <b>+ 새 소모임 만들기</b>로 직접 만들 수 있고, 만든 사람이 리더가 돼요.</li>
+                  <li><b>앱처럼 쓰기</b> — 브라우저 메뉴에서 "홈 화면에 추가"를 하면 아이콘이 생겨 앱처럼 열려요.</li>
+                </ol>
+              </div>
+            )}
             <button className="cat-btn" style={{ width: '100%', marginTop: 2, color: 'var(--accent)', borderColor: 'var(--accentSoft)', background: 'var(--accentSoft)' }} onClick={openCreate}>+ 새 소모임 만들기</button>
             <div className="cat-divider" />
             {isAdmin && <div className="admin-hint">관리자 모드 · 모든 소모임을 수정·삭제할 수 있어요</div>}
@@ -471,7 +508,7 @@ export default function App() {
                         );
                       })}
                     </div>
-                    <button className="leave-link" onClick={leaveGroup}>이 소모임 가입 해지하기</button>
+                    <button className="leave-link" onClick={() => setConfirmLeave(true)}>이 소모임 가입 해지하기</button>
                   </>
                 ) : (
                   <>
@@ -497,7 +534,7 @@ export default function App() {
                         </div>
                       ))}
                     </div>
-                    <button className="leave-link" onClick={leaveGroup}>이 소모임 가입 해지하기</button>
+                    <button className="leave-link" onClick={() => setConfirmLeave(true)}>이 소모임 가입 해지하기</button>
                   </>
                 )}
               </>
@@ -505,6 +542,22 @@ export default function App() {
           </div>
         ) : <div className="empty">소모임을 찾을 수 없어요.</div>}
       </div>
+      {confirmLeave && currentGroup && (
+        <div className="modal-overlay" onClick={() => setConfirmLeave(false)}>
+          <div className="modal-box" onClick={e => e.stopPropagation()}>
+            <div className="modal-title">{isLeader ? '소모임방을 삭제할까요?' : '가입을 해지할까요?'}</div>
+            <p className="modal-desc">
+              {isLeader
+                ? `리더가 나가면 「${currentGroup.name}」 소모임방이 삭제돼요. 출석·소식·멤버 정보가 모두 사라지며 되돌릴 수 없어요.`
+                : `「${currentGroup.name}」에서 내 가입이 해지돼요. 언제든 다시 신청할 수 있어요.`}
+            </p>
+            <div className="modal-actions">
+              <button className="btn-ghost" onClick={() => setConfirmLeave(false)}>취소</button>
+              <button className="btn-danger" onClick={leaveGroup}>{isLeader ? '삭제하기' : '해지하기'}</button>
+            </div>
+          </div>
+        </div>
+      )}
       {toast && <div className="toast">{toast}</div>}
     </div>
   );
@@ -523,7 +576,16 @@ const STYLE = `
 .me-tag { font-size:12px; color: var(--sub); font-weight:600; }
 .me-tag button { background:none; border:none; color: var(--accent); font-weight:700; cursor:pointer; font-size:12px; padding:0 0 0 5px; }
 .admin-badge { font-size:10px; font-weight:800; color:#fff; background: linear-gradient(135deg,#5E5CE6,#3B82F6); padding:3px 8px; border-radius:6px; }
-.cat-row { display:grid; grid-template-columns: repeat(4, 1fr); gap:10px; margin-bottom:8px; }
+.cat-row { display:grid; grid-template-columns: repeat(5, 1fr); gap:10px; margin-bottom:8px; }
+.manual-btn { color: var(--accent); border-color: var(--accentSoft); }
+.manual-btn.active { background: var(--accentSoft); border-color: var(--accent); color: var(--accent); }
+.manual-box { background: var(--accentSoft); border-radius:14px; padding:16px 18px; margin:8px 0 4px; }
+.manual-head { display:flex; justify-content:space-between; align-items:center; margin-bottom:8px; }
+.manual-head b { font-size:14px; color: var(--accent); }
+.manual-head button { background:none; border:none; font-size:20px; color: var(--accent); cursor:pointer; line-height:1; padding:0 2px; }
+.manual-list { margin:0; padding-left:20px; display:flex; flex-direction:column; gap:7px; }
+.manual-list li { font-size:12.5px; color:#4B4B55; line-height:1.55; }
+.manual-list li b { color: var(--ink); }
 .cat-btn { display:flex; align-items:center; justify-content:center; gap:9px; padding:16px 10px; border-radius:14px; border:1.5px solid var(--line); background: var(--bg); cursor:pointer; font-weight:700; font-size:14px; color: var(--ink); transition: all .15s ease; }
 .cat-btn:hover { border-color: var(--mint); }
 .cat-btn.active { background: var(--mintSoft); border-color: var(--mint); color:#108a6c; }
@@ -618,8 +680,13 @@ const STYLE = `
 .joincard p { font-size:13px; color: var(--sub); margin:0 0 16px; line-height:1.6; }
 .join-btn { background: var(--mint); color:#fff; border:none; padding:12px 32px; border-radius:13px; font-weight:700; font-size:14px; cursor:pointer; }
 .leave-link { background:none; border:none; color: var(--sub); font-size:12px; font-weight:600; cursor:pointer; text-decoration:underline; margin-top:14px; display:block; }
+.modal-overlay { position:fixed; inset:0; background:rgba(20,20,40,.45); display:flex; align-items:center; justify-content:center; z-index:60; padding:20px; }
+.modal-box { background:var(--bg); border-radius:18px; padding:22px; max-width:340px; width:100%; box-shadow:0 16px 40px rgba(0,0,0,.25); }
+.modal-title { font-size:16px; font-weight:800; margin-bottom:8px; }
+.modal-desc { font-size:13px; color:#4B4B55; line-height:1.6; margin:0 0 18px; }
+.modal-actions { display:flex; gap:8px; justify-content:flex-end; }
 .toast { position:fixed; bottom:20px; left:50%; transform:translateX(-50%); background: var(--ink); color:#fff; padding:9px 18px; border-radius:11px; font-size:13px; box-shadow:0 6px 18px rgba(0,0,0,.2); z-index:50; }
 .share-note { text-align:center; font-size:11px; color: var(--sub); margin-top:24px; font-weight:500; }
-@media (max-width: 720px) { .grid { grid-template-columns: repeat(2, 1fr); gap:20px 14px; } .cat-row { gap:8px; } .cat-btn { flex-direction:column; gap:6px; padding:13px 6px; font-size:12.5px; } }
+@media (max-width: 720px) { .grid { grid-template-columns: repeat(2, 1fr); gap:20px 14px; } .cat-row { grid-template-columns: repeat(3, 1fr); gap:8px; } .cat-btn { flex-direction:column; gap:6px; padding:13px 6px; font-size:12.5px; } }
 @media (max-width: 460px) { .grid { grid-template-columns: 1fr; } }
 `;
